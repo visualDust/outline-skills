@@ -1,0 +1,35 @@
+{
+  "name": "outline-skills",
+  "owner": {
+    "name": "VisualDust",
+    "email": "gavin@gong.host"
+  },
+  "metadata": {
+    "description": "Claude Code plugin marketplace for Outline knowledge base operations",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "outline-skills",
+      "source": "./",
+      "description": "Operate Outline knowledge base - manage documents, collections, search, users, groups, comments, attachments, shares, stars, revisions, events, views, and file operations",
+      "version": "0.1.0",
+      "author": {
+        "name": "VisualDust",
+        "email": "gavin@gong.host"
+      },
+      "homepage": "https://github.com/visualdust/outline-skills",
+      "repository": "https://github.com/visualdust/outline-skills",
+      "license": "MIT",
+      "keywords": [
+        "outline",
+        "knowledge-base",
+        "documentation",
+        "wiki",
+        "collaboration",
+        "cli",
+        "api-client"
+      ]
+    }
+  ]
+}

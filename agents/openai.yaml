@@ -1,0 +1,40 @@
+name: outline-skills
+version: 0.1.0
+description: Operate Outline knowledge base through API
+
+skills:
+  - name: outline-skills
+    path: ../skills/outline-skills
+    description: Interact with Outline knowledge bases - create, read, update, delete documents and collections, search content, manage users, groups, comments, and attachments
+    trigger:
+      keywords:
+        - outline
+        - knowledge base
+        - document
+        - collection
+        - wiki
+    usage: |
+      Use this skill when the user wants to interact with Outline knowledge bases.
+
+      Examples:
+      - Search for documents in Outline
+      - Create a new document
+      - List collections
+      - Update document content
+      - Manage users and permissions
+
+configuration:
+  environment:
+    - name: OUTLINE_API_KEY
+      description: Outline API key (format: ol_api_...)
+      required: true
+
+  files:
+    - path: ~/.outline-skills/config.json
+      description: Optional configuration file
+      format: json
+      schema:
+        api_key: string
+        base_url: string (optional)
+        default_collection: string (optional)
+        timeout: number (optional)

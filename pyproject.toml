@@ -1,0 +1,87 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "outline-kb-cli"
+version = "0.1.0"
+description = "A Python client and CLI for Outline knowledge bases"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "VisualDust", email = "gavin@gong.host"}
+]
+maintainers = [
+    {name = "VisualDust", email = "gavin@gong.host"}
+]
+keywords = [
+    "outline",
+    "knowledge-base",
+    "documentation",
+    "wiki",
+    "collaboration",
+    "cli",
+    "api-client"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Office/Business",
+    "Topic :: Documentation",
+]
+
+[project.urls]
+Homepage = "https://github.com/visualdust/outline-skills"
+Repository = "https://github.com/visualdust/outline-skills"
+Issues = "https://github.com/visualdust/outline-skills/issues"
+Documentation = "https://github.com/visualdust/outline-skills#readme"
+
+[project.scripts]
+outline-cli = "outline_cli.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pre-commit>=3.7",
+    "ruff>=0.11.0",
+    "mypy>=1.0",
+]
+
+[tool.setuptools]
+packages = ["outline_cli"]
+
+[tool.setuptools.package-data]
+outline_cli = ["py.typed"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=outline_cli --cov-report=term-missing"

@@ -1,0 +1,62 @@
+# Outline Skills
+
+## Description
+
+Operate Outline knowledge base - create, read, update, delete documents and collections, search content, manage users.
+
+## Trigger
+
+Use this skill when the user mentions:
+- Outline
+- Knowledge base operations
+- Document management in Outline
+- Collection management
+- Wiki operations
+
+## Usage
+
+This skill provides Python scripts to interact with Outline API:
+
+### Prerequisites
+
+Set up your Outline API key:
+```bash
+export OUTLINE_API_KEY="ol_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+Or create `~/.claude/outline-config.json`:
+```json
+{
+  "api_key": "ol_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "base_url": "https://app.getoutline.com/api"
+}
+```
+
+### Common Operations
+
+**Search Documents**
+```bash
+python scripts/search_ops.py "search query"
+```
+
+**Create Document**
+```bash
+python scripts/document_ops.py create --title "Title" --text "Content" --collection-id "id"
+```
+
+**List Collections**
+```bash
+python scripts/collection_ops.py list
+```
+
+## Documentation
+
+For detailed documentation, see:
+- [SKILL.md](../../skills/outline-skills/SKILL.md)
+- [API_REFERENCE.md](../../skills/outline-skills/API_REFERENCE.md)
+- [EXAMPLES.md](../../skills/outline-skills/EXAMPLES.md)
+
+## Configuration
+
+- Environment variable: `OUTLINE_API_KEY`
+- Config file: `~/.claude/outline-config.json`

@@ -1,0 +1,20 @@
+{
+  "name": "outline-skills",
+  "version": "0.1.0",
+  "description": "Operate Outline knowledge base - create, read, update, delete documents and collections, search content, manage users",
+  "author": {
+    "name": "VisualDust",
+    "email": "gavin@gong.host",
+    "url": "https://github.com/visualdust"
+  },
+  "repository": "https://github.com/visualdust/outline-skills",
+  "license": "MIT",
+  "skills": "./skills/",
+  "keywords": [
+    "outline",
+    "knowledge-base",
+    "documentation",
+    "wiki",
+    "collaboration"
+  ]
+}
