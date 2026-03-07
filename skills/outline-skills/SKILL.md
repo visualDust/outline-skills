@@ -10,6 +10,17 @@ allowed-tools: Bash(outline-cli *)
 
 Use this skill when the user asks to operate an Outline knowledge base via API/CLI.
 
+## Outline Content Guidance
+
+Outline documents support rich, structured content — not just plain paragraphs. When creating or updating documents, actively choose formatting that fits the task: headings, bullet/numbered lists, task lists, tables, quotes, code fences, callouts, links, attachments, and Mermaid diagrams when helpful.
+
+Prefer readable structure over large walls of text. For example:
+- use headings for sections
+- use lists for steps, options, and summaries
+- use tables for comparisons
+- use code fences for commands/snippets
+- use Mermaid for flows, architecture, or state diagrams
+
 ## When to Trigger
 
 Trigger this skill when requests involve:
@@ -143,6 +154,24 @@ outline-cli search "query" --titles-only
 outline-cli search "query" --collection-id "collection-id" --limit 10
 ```
 
+### Authentication
+
+```bash
+outline-cli auth info  # Get current user and team information
+```
+
+**Returns:**
+- Current user details (id, name, email, role, preferences)
+- Team/workspace information
+- User's groups and permissions
+- Available teams
+
+**Use cases:**
+- Verify API key is working and check which user it belongs to
+- Get current user's ID for permission operations
+- Check user's role and permissions
+- Troubleshoot authentication issues
+
 ### Users / Groups
 
 ```bash
@@ -167,12 +196,34 @@ outline-cli groups memberships --id "group-id"
 
 ### Comments / Attachments
 
+**Comment Features:**
+- Comments support plain text only (no Markdown rendering)
+- Maximum length: 1000 characters per comment
+- For longer content, split into multiple comments
+- Comments can be threaded (replies), resolved/unresolved, and reacted to with emojis
+
+**Comment Operations:**
 ```bash
 outline-cli comments list --document-id "document-id"
 outline-cli comments create --document-id "document-id" --data "Comment text"
+outline-cli comments create --document-id "document-id" --data "Reply text" --parent-id "parent-comment-id"
 outline-cli comments update --id "comment-id" --data "Updated comment"
 outline-cli comments delete --id "comment-id"
+outline-cli comments resolve --id "comment-id"
+outline-cli comments unresolve --id "comment-id"
+outline-cli comments add-reaction --id "comment-id" --emoji "👍"
+outline-cli comments remove-reaction --id "comment-id" --emoji "👍"
+```
 
+**When to use comment features:**
+- Use `resolve` to mark discussions/issues as completed
+- Use `unresolve` to reopen discussions that need more attention
+- Use reactions for quick feedback (👍, ❤️, 😊, etc.)
+- Use `--parent-id` to reply to specific comments and create threaded discussions
+- When listing comments on documents with many comments, use `--limit` and `--offset` for pagination
+
+**Attachment Operations:**
+```bash
 outline-cli attachments create --name "file.pdf" --document-id "document-id" --content-type "application/pdf" --size 1024
 outline-cli attachments redirect --id "attachment-id"
 outline-cli attachments delete --id "attachment-id"
@@ -218,16 +269,47 @@ outline-cli views list --document-id "document-id" --limit 25
 
 ## Troubleshooting
 
-### 401 Unauthorized
+### Authentication Errors
+
+**401 Unauthorized:**
 - Check API key exists and starts with `ol_api_`
-- Check key is still valid and has required permissions
+- **Key may have expired** - Ask user to verify the key is still valid in Outline settings
+- Guide user to create a new key: Settings → API → Create new API key
+- Ensure the key hasn't been revoked or deleted
 
-### 403 Forbidden
-- Usually permission scope issue or missing access to target resource
+**403 Forbidden:**
+- **Permission scope issue** - The API key may not have sufficient permissions
+- **Resource access denied** - The user account associated with the key may not have access to the requested collection or document
+- Ask user to verify:
+  - The API key has the required scopes (read, write, admin)
+  - Their account has access to the specific collection/document
+  - They are not trying to access archived or deleted resources
 
-### Connection errors
-- Verify `OUTLINE_BASE_URL`
-- Verify instance is reachable
+### Connection and URL Errors
+
+**404 Not Found:**
+- If specific resource (document/collection): Resource may not exist or has been deleted
+- **If basic operations fail** (e.g., `collections list`, `users list`):
+  - **Base URL is likely incorrect**
+  - Ask user to confirm the base URL includes `/api` suffix
+  - Example: `https://outline.example.com/api` (not `https://outline.example.com`)
+  - Verify the Outline instance URL is correct
+
+**Connection errors:**
+- Verify `OUTLINE_BASE_URL` is set correctly
+- Verify instance is reachable (not behind firewall/VPN)
+- Check for typos in the URL
+
+### Comment-Specific Issues
+
+**400 Bad Request - "Comment must be less than 1000 characters":**
+- Single comment is limited to 1000 characters
+- **Solution**: Split long content into multiple comments
+- Consider using document content for longer text instead of comments
+
+**Comment not rendering Markdown:**
+- Comments only support plain text, not Markdown
+- Use document content for formatted text
 
 ### Command not found
 ```bash

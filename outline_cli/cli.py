@@ -554,6 +554,17 @@ def search_documents(client: OutlineClient, args: argparse.Namespace) -> int:
         return 1
 
 
+def get_auth_info(client: OutlineClient, args) -> int:
+    """Get current authentication and user information."""
+    try:
+        result = client.auth_info()
+        print(json.dumps(result, indent=2))
+        return 0
+    except OutlineAPIError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def list_users(client: OutlineClient, args):
     """List all users."""
     try:
@@ -860,6 +871,50 @@ def delete_comment(client: OutlineClient, args):
         return 1
 
 
+def resolve_comment(client: OutlineClient, args):
+    """Mark a comment as resolved."""
+    try:
+        result = client.comments_resolve(id=args.id)
+        print(json.dumps(result, indent=2))
+        return 0
+    except OutlineAPIError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def unresolve_comment(client: OutlineClient, args):
+    """Mark a comment as unresolved."""
+    try:
+        result = client.comments_unresolve(id=args.id)
+        print(json.dumps(result, indent=2))
+        return 0
+    except OutlineAPIError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def add_comment_reaction(client: OutlineClient, args):
+    """Add an emoji reaction to a comment."""
+    try:
+        result = client.comments_add_reaction(id=args.id, emoji=args.emoji)
+        print(json.dumps(result, indent=2))
+        return 0
+    except OutlineAPIError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def remove_comment_reaction(client: OutlineClient, args):
+    """Remove an emoji reaction from a comment."""
+    try:
+        result = client.comments_remove_reaction(id=args.id, emoji=args.emoji)
+        print(json.dumps(result, indent=2))
+        return 0
+    except OutlineAPIError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def create_attachment(client: OutlineClient, args):
     """Create an attachment."""
     try:
@@ -1077,7 +1132,7 @@ def main() -> int:
         description="Outline CLI - Interact with Outline knowledge bases",
         epilog="For more information, see: https://github.com/visualdust/outline-skills",
     )
-    parser.add_argument("--version", action="version", version="outline-cli 0.1.0")
+    parser.add_argument("--version", action="version", version="outline-cli 0.1.1")
     parser.add_argument("--api-key", help="Outline API key")
     parser.add_argument("--base-url", help="Outline API base URL")
     parser.add_argument("--timeout", type=int, help="Request timeout in seconds")
@@ -1321,6 +1376,13 @@ def main() -> int:
     search_parser.add_argument("--limit", type=int, default=25, help="Maximum number of results")
     search_parser.add_argument("--titles-only", action="store_true", help="Search titles only (faster)")
 
+    # Auth subcommand
+    auth_parser = subparsers.add_parser("auth", help="Authentication operations")
+    auth_subparsers = auth_parser.add_subparsers(dest="subcommand", help="Auth commands")
+
+    # Auth: info
+    auth_subparsers.add_parser("info", help="Get current user and authentication information")
+
     # Users subcommand
     users_parser = subparsers.add_parser("users", help="User operations")
     users_subparsers = users_parser.add_subparsers(dest="subcommand", help="User commands")
@@ -1459,6 +1521,26 @@ def main() -> int:
     # Comments: delete
     comments_delete = comments_subparsers.add_parser("delete", help="Delete a comment")
     comments_delete.add_argument("--id", required=True, help="Comment ID")
+
+    # Comments: resolve
+    comments_resolve = comments_subparsers.add_parser("resolve", help="Mark comment as resolved")
+    comments_resolve.add_argument("--id", required=True, help="Comment ID")
+
+    # Comments: unresolve
+    comments_unresolve = comments_subparsers.add_parser("unresolve", help="Mark comment as unresolved")
+    comments_unresolve.add_argument("--id", required=True, help="Comment ID")
+
+    # Comments: add-reaction
+    comments_add_reaction = comments_subparsers.add_parser("add-reaction", help="Add emoji reaction to comment")
+    comments_add_reaction.add_argument("--id", required=True, help="Comment ID")
+    comments_add_reaction.add_argument("--emoji", required=True, help="Emoji character (e.g., 👍, ❤️, 😊)")
+
+    # Comments: remove-reaction
+    comments_remove_reaction = comments_subparsers.add_parser(
+        "remove-reaction", help="Remove emoji reaction from comment"
+    )
+    comments_remove_reaction.add_argument("--id", required=True, help="Comment ID")
+    comments_remove_reaction.add_argument("--emoji", required=True, help="Emoji character to remove")
 
     # Attachments subcommand
     attachments_parser = subparsers.add_parser("attachments", help="Attachment operations")
@@ -1645,6 +1727,16 @@ def main() -> int:
     elif args.command == "search":
         return search_documents(client, args)
 
+    elif args.command == "auth":
+        if not args.subcommand:
+            auth_parser.print_help()
+            return 1
+
+        auth_commands: dict[str, CommandHandler] = {
+            "info": get_auth_info,
+        }
+        return auth_commands[args.subcommand](client, args)
+
     elif args.command == "users":
         if not args.subcommand:
             users_parser.print_help()
@@ -1703,6 +1795,10 @@ def main() -> int:
             "create": create_comment,
             "update": update_comment,
             "delete": delete_comment,
+            "resolve": resolve_comment,
+            "unresolve": unresolve_comment,
+            "add-reaction": add_comment_reaction,
+            "remove-reaction": remove_comment_reaction,
         }
         return comment_commands[args.subcommand](client, args)
 

@@ -699,6 +699,24 @@ class OutlineClient:
             data["query"] = query
         return self._request("POST", "documents.group_memberships", data)
 
+    # Authentication Operations
+
+    def auth_info(self) -> Dict:
+        """
+        Get current authentication details and user information.
+
+        Returns:
+            Authentication details including:
+            - user: Current user information (id, name, email, role, etc.)
+            - team: Team/workspace information
+            - groups: User's groups
+            - policies: Permission policies for user and team
+
+        Raises:
+            OutlineAPIError: If request fails
+        """
+        return self._request("POST", "auth.info", {})
+
     # Collection Operations
 
     def collections_list(self, limit: int = 25, offset: int = 0) -> Dict:
@@ -1493,6 +1511,68 @@ class OutlineClient:
             OutlineAPIError: If deletion fails
         """
         return self._request("POST", "comments.delete", {"id": id})
+
+    def comments_resolve(self, id: str) -> Dict:
+        """
+        Mark a comment as resolved.
+
+        Args:
+            id: Comment ID
+
+        Returns:
+            Updated comment data
+
+        Raises:
+            OutlineAPIError: If resolve fails
+        """
+        return self._request("POST", "comments.resolve", {"id": id})
+
+    def comments_unresolve(self, id: str) -> Dict:
+        """
+        Mark a comment as unresolved.
+
+        Args:
+            id: Comment ID
+
+        Returns:
+            Updated comment data
+
+        Raises:
+            OutlineAPIError: If unresolve fails
+        """
+        return self._request("POST", "comments.unresolve", {"id": id})
+
+    def comments_add_reaction(self, id: str, emoji: str) -> Dict:
+        """
+        Add an emoji reaction to a comment.
+
+        Args:
+            id: Comment ID
+            emoji: Emoji character (e.g., '👍', '❤️', '😊')
+
+        Returns:
+            Success confirmation
+
+        Raises:
+            OutlineAPIError: If adding reaction fails
+        """
+        return self._request("POST", "comments.add_reaction", {"id": id, "emoji": emoji})
+
+    def comments_remove_reaction(self, id: str, emoji: str) -> Dict:
+        """
+        Remove an emoji reaction from a comment.
+
+        Args:
+            id: Comment ID
+            emoji: Emoji character to remove
+
+        Returns:
+            Success confirmation
+
+        Raises:
+            OutlineAPIError: If removing reaction fails
+        """
+        return self._request("POST", "comments.remove_reaction", {"id": id, "emoji": emoji})
 
     # Attachment Operations
 
