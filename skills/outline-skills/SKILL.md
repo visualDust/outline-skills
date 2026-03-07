@@ -41,6 +41,7 @@ After running commands:
 1. Report the key result in plain language.
 2. Include IDs/URLs returned by Outline when useful.
 3. If command fails, provide likely cause + exact next command to retry.
+4. Do not publish or share documents/collections unless the user asked for it.
 
 ## Prerequisites
 
@@ -145,6 +146,15 @@ outline-cli collections group-memberships --id "collection-id"
 outline-cli collections export --id "collection-id" --format "markdown"
 outline-cli collections export-all --format "markdown"
 ```
+
+**Sharing workflow for collections:**
+- To share a collection with a specific person, use `collections add-user`.
+- This requires `user-id`, so first find the user with `users list --query`, usually by email or name.
+- After creating a collection/document, if sharing may be needed, ask the user whether it should be shared before the next interaction.
+- If sharing with the user you are talking to, `admin` is usually the right default.
+- If `auth info` shows the API key already belongs to the same person the user wants to share with, no extra sharing is needed.
+- If sharing with someone else, ask whether they should get read-only access or edit/manage access.
+- If the target person is ambiguous, confirm identity before sharing.
 
 ### Search
 
@@ -310,6 +320,19 @@ outline-cli views list --document-id "document-id" --limit 25
 **Comment not rendering Markdown:**
 - Comments only support plain text, not Markdown
 - Use document content for formatted text
+
+### Created content is not visible to the user
+
+- Ask which Outline account the user is logged in with.
+- The configured API key may belong to a different account than the one the user is using in the web UI.
+- In that case, the created collection/document may need to be shared with the user's account before they can see it.
+
+### Sharing and privacy safety
+
+- Do not publish or share content unless the user explicitly asked.
+- Prefer email for identity matching when available; users usually will not know their `user-id`.
+- If the user asks to share with another person and permission level is unclear, ask before granting access.
+- If you are not sure whether the target account is the user's own account, confirm first.
 
 ### Command not found
 ```bash
