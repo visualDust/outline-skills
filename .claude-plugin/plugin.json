@@ -1,6 +1,6 @@
 {
   "name": "outline-skills",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Operate Outline knowledge base - create, read, update, delete documents and collections, search content, manage users",
   "author": {
     "name": "VisualDust",

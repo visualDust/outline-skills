@@ -1132,7 +1132,7 @@ def main() -> int:
         description="Outline CLI - Interact with Outline knowledge bases",
         epilog="For more information, see: https://github.com/visualdust/outline-skills",
     )
-    parser.add_argument("--version", action="version", version="outline-cli 0.1.1")
+    parser.add_argument("--version", action="version", version="outline-cli 0.1.2")
     parser.add_argument("--api-key", help="Outline API key")
     parser.add_argument("--base-url", help="Outline API base URL")
     parser.add_argument("--timeout", type=int, help="Request timeout in seconds")
