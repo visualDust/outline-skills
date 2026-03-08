@@ -112,7 +112,7 @@ outline-cli documents move --id "document-id" --collection-id "collection-id"
 outline-cli documents duplicate --id "document-id"
 outline-cli documents templatize --id "document-id"
 outline-cli documents export --id "document-id"
-outline-cli documents import --file "./doc.md"
+outline-cli documents import --file "./doc.md"   # local file; Markdown/text is imported directly, other files use Outline import flow (supported formats depend on server)
 outline-cli documents drafts --collection-id "collection-id"
 outline-cli documents archived --limit 25 --offset 0
 outline-cli documents deleted --limit 25 --offset 0
@@ -231,6 +231,15 @@ outline-cli comments remove-reaction --id "comment-id" --emoji "👍"
 - Use reactions for quick feedback (👍, ❤️, 😊, etc.)
 - Use `--parent-id` to reply to specific comments and create threaded discussions
 - When listing comments on documents with many comments, use `--limit` and `--offset` for pagination
+
+**IMPORTANT - Comment Threading Limitation:**
+- Outline only supports ONE level of threading (replies to top-level comments)
+- When replying to a comment that already has a `parentCommentId`, you MUST use that comment's parent as your `--parent-id`, NOT the comment itself
+- Example:
+  - Top-level comment A (parentCommentId: null)
+  - Reply B to A (parentCommentId: A's ID)
+  - To reply to B, use `--parent-id A's ID`, NOT B's ID
+- If you try to reply to a reply (nested 2+ levels), the comment will be created but won't display correctly in the UI
 
 **Attachment Operations:**
 ```bash

@@ -5,12 +5,16 @@ This module provides a Python client for interacting with the Outline API.
 """
 
 import json
+import mimetypes
 import urllib.error
 import urllib.request
+import uuid
+from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urljoin
 
 from .config import ConfigManager
-from .exceptions import OutlineAPIError
+from .exceptions import OutlineAPIError, OutlineValidationError
 
 
 class OutlineClient:
@@ -109,6 +113,91 @@ class OutlineClient:
             raise
         except Exception as e:
             raise OutlineAPIError(f"Unexpected error: {e}")
+
+    def _build_url(self, path_or_url: str) -> str:
+        """Build an absolute URL from an API-relative path or absolute URL."""
+        if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
+            return path_or_url
+        return urljoin(f"{self.base_url}/", path_or_url.lstrip("/"))
+
+    def _upload_file(
+        self,
+        upload_url: str,
+        form_fields: Dict[str, Any],
+        file_path: Path,
+        content_type: str,
+    ) -> Dict[str, Any]:
+        """
+        Upload a local file using multipart form data.
+
+        Args:
+            upload_url: Absolute or API-relative upload target
+            form_fields: Additional multipart form fields required by the server
+            file_path: Local file path
+            content_type: MIME type for the uploaded file
+
+        Returns:
+            Response JSON object
+
+        Raises:
+            OutlineAPIError: If the upload fails
+        """
+        boundary = f"outline-cli-{uuid.uuid4().hex}"
+        boundary_bytes = boundary.encode("utf-8")
+        body = bytearray()
+
+        def add_field(name: str, value: Any) -> None:
+            body.extend(b"--" + boundary_bytes + b"\r\n")
+            body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"))
+            if isinstance(value, bytes):
+                body.extend(value)
+            else:
+                body.extend(str(value).encode("utf-8"))
+            body.extend(b"\r\n")
+
+        for name, value in form_fields.items():
+            add_field(name, value)
+
+        body.extend(b"--" + boundary_bytes + b"\r\n")
+        body.extend(
+            (
+                f'Content-Disposition: form-data; name="file"; filename="{file_path.name}"\r\n'
+                f"Content-Type: {content_type}\r\n\r\n"
+            ).encode("utf-8")
+        )
+        body.extend(file_path.read_bytes())
+        body.extend(b"\r\n")
+        body.extend(b"--" + boundary_bytes + b"--\r\n")
+
+        request = urllib.request.Request(
+            self._build_url(upload_url),
+            data=bytes(body),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                "User-Agent": "outline-cli/0.1.0 (Python)",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                response_data = json.loads(response.read().decode("utf-8"))
+                if not isinstance(response_data, dict):
+                    raise OutlineAPIError("Unexpected upload response format: expected a JSON object")
+                return response_data
+        except urllib.error.HTTPError as e:
+            error_message = f"HTTP {e.code}: {e.reason}"
+            try:
+                error_data = json.loads(e.read().decode("utf-8"))
+                if not isinstance(error_data, dict):
+                    raise OutlineAPIError(error_message, status_code=e.code)
+                error_message = error_data.get("message", error_message)
+                raise OutlineAPIError(error_message, status_code=e.code, response=error_data)
+            except json.JSONDecodeError:
+                raise OutlineAPIError(error_message, status_code=e.code)
+        except urllib.error.URLError as e:
+            raise OutlineAPIError(f"Connection error: {e.reason}")
 
     # Document Operations
 
@@ -404,10 +493,10 @@ class OutlineClient:
         publish: bool = True,
     ) -> Dict:
         """
-        Import a document from a file.
+        Import a document from a local file.
 
         Args:
-            file: File content or path
+            file: Path to a local file
             collection_id: Collection ID to import into
             parent_document_id: Optional parent document ID
             publish: Whether to publish immediately (default: True)
@@ -418,14 +507,76 @@ class OutlineClient:
         Raises:
             OutlineAPIError: If import fails
         """
-        data: Dict[str, Any] = {
-            "file": file,
-            "collectionId": collection_id,
-            "publish": publish,
-        }
-        if parent_document_id:
-            data["parentDocumentId"] = parent_document_id
-        return self._request("POST", "documents.import", data)
+        path = Path(file).expanduser()
+        if not path.is_file():
+            raise OutlineValidationError(f"Import expects a local file path, but '{file}' was not found.")
+
+        if path.suffix.lower() in {".md", ".markdown", ".txt"}:
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError as exc:
+                raise OutlineValidationError(f"Unable to decode '{file}' as UTF-8 text.") from exc
+
+            title = path.stem.replace("_", " ").replace("-", " ").strip() or path.stem
+            return self.documents_create(
+                title=title,
+                text=text,
+                collection_id=collection_id,
+                parent_document_id=parent_document_id,
+                publish=publish,
+            )
+
+        placeholder = self.documents_create(
+            title=f"import upload {path.stem}",
+            text=f"Temporary import placeholder for {path.name}",
+            collection_id=collection_id,
+            publish=False,
+        )
+        placeholder_id = placeholder["data"]["id"]
+
+        attachment_id: Optional[str] = None
+        try:
+            content_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+            attachment_result = self.attachments_create(
+                name=path.name,
+                document_id=placeholder_id,
+                content_type=content_type,
+                size=path.stat().st_size,
+            )
+            attachment_id = attachment_result["data"]["attachment"]["id"]
+            self._upload_file(
+                upload_url=attachment_result["data"]["uploadUrl"],
+                form_fields=attachment_result["data"]["form"],
+                file_path=path,
+                content_type=content_type,
+            )
+
+            data: Dict[str, Any] = {
+                "attachmentId": attachment_id,
+                "collectionId": collection_id,
+                "publish": publish,
+            }
+            if parent_document_id:
+                data["parentDocumentId"] = parent_document_id
+            try:
+                return self._request("POST", "documents.import", data)
+            except OutlineAPIError as exc:
+                if exc.status_code == 404:
+                    raise OutlineValidationError(
+                        "Outline could not import this uploaded file. The attachment-backed "
+                        "import flow only works for file types supported by the server."
+                    ) from exc
+                raise
+        finally:
+            if attachment_id:
+                try:
+                    self.attachments_delete(attachment_id)
+                except OutlineAPIError:
+                    pass
+            try:
+                self.documents_delete(placeholder_id)
+            except OutlineAPIError:
+                pass
 
     def documents_drafts(self, collection_id: Optional[str] = None, limit: int = 25, offset: int = 0) -> Dict:
         """

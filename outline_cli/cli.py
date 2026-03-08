@@ -10,7 +10,7 @@ import json
 import sys
 from typing import Callable
 
-from outline_cli import OutlineAPIError, OutlineClient
+from outline_cli import OutlineAPIError, OutlineClient, OutlineValidationError
 
 CommandHandler = Callable[[OutlineClient, argparse.Namespace], int]
 
@@ -172,7 +172,7 @@ def import_document(client: OutlineClient, args):
         )
         print(json.dumps(result, indent=2))
         return 0
-    except OutlineAPIError as e:
+    except (OutlineAPIError, OutlineValidationError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
@@ -1207,8 +1207,8 @@ def main() -> int:
     docs_export.add_argument("--id", required=True, help="Document ID")
 
     # Documents: import
-    docs_import = docs_subparsers.add_parser("import", help="Import a document")
-    docs_import.add_argument("--file", required=True, help="File content or path")
+    docs_import = docs_subparsers.add_parser("import", help="Import a local file")
+    docs_import.add_argument("--file", required=True, help="Path to a local file")
     docs_import.add_argument("--collection-id", required=True, help="Collection ID")
     docs_import.add_argument("--parent-id", help="Parent document ID")
     docs_import.add_argument("--draft", action="store_true", help="Create as draft")
