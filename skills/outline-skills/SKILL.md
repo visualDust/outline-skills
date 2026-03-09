@@ -207,9 +207,10 @@ outline-cli groups memberships --id "group-id"
 ### Comments / Attachments
 
 **Comment Features:**
-- Comments support plain text only (no Markdown rendering)
-- Maximum length: 1000 characters per comment
-- For longer content, split into multiple comments
+- `outline-cli comments create` accepts Markdown text through Outline's `text` field, so common formatting like paragraphs, lists, bold, italics, and inline code renders as rich text in Outline comments
+- Maximum length is still about 1000 characters per posted comment
+- Longer `comments create` replies are auto-split into numbered threaded comments like `[1/3]`, `[2/3]`, `[3/3]`
+- Auto-splitting tries to preserve Markdown block boundaries such as paragraphs, lists, and fenced code blocks
 - Comments can be threaded (replies), resolved/unresolved, and reacted to with emojis
 
 **Comment Operations:**
@@ -230,6 +231,8 @@ outline-cli comments remove-reaction --id "comment-id" --emoji "👍"
 - Use `unresolve` to reopen discussions that need more attention
 - Use reactions for quick feedback (👍, ❤️, 😊, etc.)
 - Use `--parent-id` to reply to specific comments and create threaded discussions
+- `comments create` is the preferred path for rich-text replies from Markdown input
+- For very long replies, let the CLI auto-split them instead of manually guessing chunk sizes
 - When listing comments on documents with many comments, use `--limit` and `--offset` for pagination
 
 **IMPORTANT - Comment Threading Limitation:**

@@ -13,6 +13,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import urljoin
 
+from .comment_utils import (
+    OUTLINE_COMMENT_MAX_CHARS,
+    is_comment_too_long_error,
+    prepare_comment_chunks,
+    split_comment_text,
+)
 from .config import ConfigManager
 from .exceptions import OutlineAPIError, OutlineValidationError
 
@@ -1579,6 +1585,101 @@ class OutlineClient:
         return self._request("POST", "fileOperations.delete", {"id": id})
 
     # Comment Operations
+
+    def comments_create_markdown(
+        self,
+        document_id: str,
+        text: str,
+        parent_comment_id: Optional[str] = None,
+        max_chars: int = OUTLINE_COMMENT_MAX_CHARS,
+    ) -> list[Dict[str, Any]]:
+        """
+        Create a comment from Markdown text, auto-splitting long replies when needed.
+
+        Args:
+            document_id: Document ID to comment on
+            text: Markdown comment text
+            parent_comment_id: Optional parent comment ID for replies
+            max_chars: Maximum size per posted comment chunk
+
+        Returns:
+            List of created comment responses. A long reply may create multiple comments.
+
+        Raises:
+            OutlineValidationError: If comment text is empty
+            OutlineAPIError: If creation fails
+        """
+        normalized = text.strip()
+        if not normalized:
+            raise OutlineValidationError("Comment text cannot be empty")
+
+        results: list[Dict[str, Any]] = []
+        for chunk in prepare_comment_chunks(normalized, max_chars=max_chars):
+            results.extend(
+                self._comments_create_text_with_auto_split(
+                    document_id=document_id,
+                    text=chunk,
+                    parent_comment_id=parent_comment_id,
+                    max_chars=max_chars,
+                )
+            )
+        return results
+
+    def comments_create_text(
+        self,
+        document_id: str,
+        text: str,
+        parent_comment_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a comment using Outline's Markdown-aware `text` field.
+
+        Args:
+            document_id: Document ID to comment on
+            text: Markdown comment text
+            parent_comment_id: Optional parent comment ID for replies
+
+        Returns:
+            Created comment data
+
+        Raises:
+            OutlineAPIError: If creation fails
+        """
+        payload: dict[str, Any] = {"documentId": document_id, "text": text.strip()}
+        if parent_comment_id:
+            payload["parentCommentId"] = parent_comment_id
+        return self._request("POST", "comments.create", payload)
+
+    def _comments_create_text_with_auto_split(
+        self,
+        *,
+        document_id: str,
+        text: str,
+        parent_comment_id: Optional[str],
+        max_chars: int,
+    ) -> list[Dict[str, Any]]:
+        try:
+            return [self.comments_create_text(document_id=document_id, text=text, parent_comment_id=parent_comment_id)]
+        except OutlineAPIError as exc:
+            if not is_comment_too_long_error(str(exc)) or max_chars <= 1:
+                raise
+
+            smaller_max_chars = max(1, max_chars // 2)
+            smaller_chunks = split_comment_text(text, max_chars=smaller_max_chars)
+            if len(smaller_chunks) <= 1:
+                raise
+
+            results: list[Dict[str, Any]] = []
+            for chunk in smaller_chunks:
+                results.extend(
+                    self._comments_create_text_with_auto_split(
+                        document_id=document_id,
+                        text=chunk,
+                        parent_comment_id=parent_comment_id,
+                        max_chars=smaller_max_chars,
+                    )
+                )
+            return results
 
     def comments_create(self, document_id: str, data: Dict, parent_comment_id: Optional[str] = None) -> Dict:
         """

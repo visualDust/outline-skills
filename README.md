@@ -6,6 +6,7 @@ AI agent skill for interacting with [Outline](https://www.getoutline.com/) knowl
 
 - Full Outline API coverage: documents, collections, search, users, groups, comments, attachments, shares, stars, revisions, events, views, and file operations
 - Membership and permission workflows for documents, collections, and groups
+- Markdown comment creation with rich-text rendering and automatic long-reply splitting for Outline comments
 - Works with Claude Code, Codex, Cursor, Windsurf, and other AI agents
 - Cross-platform: Windows, Linux, and macOS
 

@@ -11,6 +11,7 @@ import sys
 from typing import Callable
 
 from outline_cli import OutlineAPIError, OutlineClient, OutlineValidationError
+from outline_cli.comment_utils import build_comment_data
 
 CommandHandler = Callable[[OutlineClient, argparse.Namespace], int]
 
@@ -827,19 +828,17 @@ def get_comment(client: OutlineClient, args):
 def create_comment(client: OutlineClient, args):
     """Create a new comment."""
     try:
-        # Convert text to ProseMirror JSON format
-        comment_data = {
-            "type": "doc",
-            "content": [{"type": "paragraph", "content": [{"type": "text", "text": args.data}]}],
-        }
-        result = client.comments_create(
+        results = client.comments_create_markdown(
             document_id=args.document_id,
-            data=comment_data,
+            text=args.data,
             parent_comment_id=args.parent_id if hasattr(args, "parent_id") else None,
         )
-        print(json.dumps(result, indent=2))
+        if len(results) == 1:
+            print(json.dumps(results[0], indent=2))
+        else:
+            print(json.dumps({"split": True, "chunkCount": len(results), "results": results}, indent=2))
         return 0
-    except OutlineAPIError as e:
+    except (OutlineAPIError, OutlineValidationError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
@@ -847,15 +846,11 @@ def create_comment(client: OutlineClient, args):
 def update_comment(client: OutlineClient, args):
     """Update a comment."""
     try:
-        # Convert text to ProseMirror JSON format
-        comment_data = {
-            "type": "doc",
-            "content": [{"type": "paragraph", "content": [{"type": "text", "text": args.data}]}],
-        }
+        comment_data = build_comment_data(args.data)
         result = client.comments_update(id=args.id, data=comment_data)
         print(json.dumps(result, indent=2))
         return 0
-    except OutlineAPIError as e:
+    except (OutlineAPIError, OutlineValidationError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
@@ -1132,7 +1127,7 @@ def main() -> int:
         description="Outline CLI - Interact with Outline knowledge bases",
         epilog="For more information, see: https://github.com/visualdust/outline-skills",
     )
-    parser.add_argument("--version", action="version", version="outline-cli 0.1.2")
+    parser.add_argument("--version", action="version", version="outline-cli 0.1.3")
     parser.add_argument("--api-key", help="Outline API key")
     parser.add_argument("--base-url", help="Outline API base URL")
     parser.add_argument("--timeout", type=int, help="Request timeout in seconds")
@@ -1510,13 +1505,17 @@ def main() -> int:
     # Comments: create
     comments_create = comments_subparsers.add_parser("create", help="Create a new comment")
     comments_create.add_argument("--document-id", required=True, help="Document ID")
-    comments_create.add_argument("--data", required=True, help="Comment content (Markdown)")
+    comments_create.add_argument(
+        "--data",
+        required=True,
+        help="Comment Markdown text. Long content is auto-split into numbered replies.",
+    )
     comments_create.add_argument("--parent-id", help="Parent comment ID for replies")
 
     # Comments: update
     comments_update = comments_subparsers.add_parser("update", help="Update a comment")
     comments_update.add_argument("--id", required=True, help="Comment ID")
-    comments_update.add_argument("--data", required=True, help="New comment content (Markdown)")
+    comments_update.add_argument("--data", required=True, help="New comment text")
 
     # Comments: delete
     comments_delete = comments_subparsers.add_parser("delete", help="Delete a comment")

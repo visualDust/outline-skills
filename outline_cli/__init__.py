@@ -5,7 +5,7 @@ This package provides both a Python API client and command-line interface
 for interacting with Outline (https://www.getoutline.com/) knowledge bases.
 """
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 __author__ = "VisualDust"
 __email__ = "gavin@gong.host"
 
