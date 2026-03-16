@@ -83,6 +83,15 @@ The agent will automatically use the configured credentials to perform these ope
 
 While this repo is designed for AI agent integration, the underlying `outline-kb-cli` package can also be used as a standalone CLI tool. See [skills/outline-skills/SKILL.md](skills/outline-skills/SKILL.md) for detailed command reference.
 
+For longer document/comment bodies, prefer file-backed inputs instead of large shell arguments:
+
+```bash
+outline-cli documents create --title "Title" --collection-id "coll-id" --text-file ./doc.md
+outline-cli documents update --id "doc-id" --text-file ./doc.md
+outline-cli comments create --document-id "doc-id" --data-file ./comment.md
+outline-cli comments update --id "comment-id" --data-file ./comment.md
+```
+
 ## Development
 
 ### Project Structure

@@ -8,6 +8,7 @@ This module provides the main command-line interface for the outline-cli package
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Callable
 
 from outline_cli import OutlineAPIError, OutlineClient, OutlineValidationError
@@ -16,19 +17,39 @@ from outline_cli.comment_utils import build_comment_data
 CommandHandler = Callable[[OutlineClient, argparse.Namespace], int]
 
 
+def _read_utf8_text_file(path_value: str, option_name: str) -> str:
+    """Read UTF-8 text content from a local file for CLI options."""
+    path = Path(path_value).expanduser()
+    if not path.is_file():
+        raise OutlineValidationError(f"{option_name} expects a local file path, but '{path_value}' was not found.")
+
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise OutlineValidationError(f"Unable to decode '{path_value}' as UTF-8 text.") from exc
+
+
+def _resolve_text_option(args: argparse.Namespace, value_attr: str, file_attr: str, option_name: str) -> str | None:
+    """Resolve inline text or file-backed text CLI input."""
+    file_value = getattr(args, file_attr, None)
+    if file_value:
+        return _read_utf8_text_file(file_value, option_name)
+    return getattr(args, value_attr, None)
+
+
 def create_document(client: OutlineClient, args):
     """Create a new document."""
     try:
         result = client.documents_create(
             title=args.title,
-            text=args.text,
+            text=_resolve_text_option(args, "text", "text_file", "--text-file") or "",
             collection_id=args.collection_id,
             parent_document_id=args.parent_id,
             publish=not args.draft,
         )
         print(json.dumps(result, indent=2))
         return 0
-    except OutlineAPIError as e:
+    except (OutlineAPIError, OutlineValidationError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
@@ -65,12 +86,12 @@ def update_document(client: OutlineClient, args):
         result = client.documents_update(
             id=args.id,
             title=args.title,
-            text=args.text,
+            text=_resolve_text_option(args, "text", "text_file", "--text-file"),
             publish=args.publish if args.publish is not None else None,
         )
         print(json.dumps(result, indent=2))
         return 0
-    except OutlineAPIError as e:
+    except (OutlineAPIError, OutlineValidationError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
@@ -830,7 +851,7 @@ def create_comment(client: OutlineClient, args):
     try:
         results = client.comments_create_markdown(
             document_id=args.document_id,
-            text=args.data,
+            text=_resolve_text_option(args, "data", "data_file", "--data-file") or "",
             parent_comment_id=args.parent_id if hasattr(args, "parent_id") else None,
         )
         if len(results) == 1:
@@ -846,7 +867,8 @@ def create_comment(client: OutlineClient, args):
 def update_comment(client: OutlineClient, args):
     """Update a comment."""
     try:
-        comment_data = build_comment_data(args.data)
+        comment_text = _resolve_text_option(args, "data", "data_file", "--data-file") or ""
+        comment_data = build_comment_data(comment_text)
         result = client.comments_update(id=args.id, data=comment_data)
         print(json.dumps(result, indent=2))
         return 0
@@ -1127,7 +1149,7 @@ def main() -> int:
         description="Outline CLI - Interact with Outline knowledge bases",
         epilog="For more information, see: https://github.com/visualdust/outline-skills",
     )
-    parser.add_argument("--version", action="version", version="outline-cli 0.1.3")
+    parser.add_argument("--version", action="version", version="outline-cli 0.1.4")
     parser.add_argument("--api-key", help="Outline API key")
     parser.add_argument("--base-url", help="Outline API base URL")
     parser.add_argument("--timeout", type=int, help="Request timeout in seconds")
@@ -1141,7 +1163,9 @@ def main() -> int:
     # Documents: create
     docs_create = docs_subparsers.add_parser("create", help="Create a new document")
     docs_create.add_argument("--title", required=True, help="Document title")
-    docs_create.add_argument("--text", required=True, help="Document content (Markdown)")
+    docs_create_text_group = docs_create.add_mutually_exclusive_group(required=True)
+    docs_create_text_group.add_argument("--text", help="Document content (Markdown)")
+    docs_create_text_group.add_argument("--text-file", help="Read document content from a UTF-8 text file")
     docs_create.add_argument("--collection-id", required=True, help="Collection ID")
     docs_create.add_argument("--parent-id", help="Parent document ID (for nested documents)")
     docs_create.add_argument("--draft", action="store_true", help="Create as draft (unpublished)")
@@ -1160,7 +1184,9 @@ def main() -> int:
     docs_update = docs_subparsers.add_parser("update", help="Update a document")
     docs_update.add_argument("--id", required=True, help="Document ID")
     docs_update.add_argument("--title", help="New title")
-    docs_update.add_argument("--text", help="New content")
+    docs_update_text_group = docs_update.add_mutually_exclusive_group()
+    docs_update_text_group.add_argument("--text", help="New content")
+    docs_update_text_group.add_argument("--text-file", help="Read new content from a UTF-8 text file")
     publish_group = docs_update.add_mutually_exclusive_group()
     publish_group.add_argument("--publish", dest="publish", action="store_true", help="Publish the document")
     publish_group.add_argument("--unpublish", dest="publish", action="store_false", help="Unpublish the document")
@@ -1505,17 +1531,20 @@ def main() -> int:
     # Comments: create
     comments_create = comments_subparsers.add_parser("create", help="Create a new comment")
     comments_create.add_argument("--document-id", required=True, help="Document ID")
-    comments_create.add_argument(
+    comments_create_data_group = comments_create.add_mutually_exclusive_group(required=True)
+    comments_create_data_group.add_argument(
         "--data",
-        required=True,
         help="Comment Markdown text. Long content is auto-split into numbered replies.",
     )
+    comments_create_data_group.add_argument("--data-file", help="Read comment Markdown from a UTF-8 text file")
     comments_create.add_argument("--parent-id", help="Parent comment ID for replies")
 
     # Comments: update
     comments_update = comments_subparsers.add_parser("update", help="Update a comment")
     comments_update.add_argument("--id", required=True, help="Comment ID")
-    comments_update.add_argument("--data", required=True, help="New comment text")
+    comments_update_data_group = comments_update.add_mutually_exclusive_group(required=True)
+    comments_update_data_group.add_argument("--data", help="New comment text")
+    comments_update_data_group.add_argument("--data-file", help="Read new comment text from a UTF-8 text file")
 
     # Comments: delete
     comments_delete = comments_subparsers.add_parser("delete", help="Delete a comment")

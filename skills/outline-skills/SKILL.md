@@ -79,6 +79,14 @@ https://app.getoutline.com
 https://outline.example.com
 ```
 
+**Large Content Input**: Prefer file-backed inputs for longer Markdown/comment bodies instead of very large shell arguments:
+```bash
+outline-cli documents create --title "Title" --collection-id "collection-id" --text-file ./doc.md
+outline-cli documents update --id "document-id" --text-file ./doc.md
+outline-cli comments create --document-id "document-id" --data-file ./comment.md
+outline-cli comments update --id "comment-id" --data-file ./comment.md
+```
+
 ### Environment Variables
 
 ```bash
@@ -102,9 +110,11 @@ export OUTLINE_BASE_URL="https://app.getoutline.com/api"  # Must include /api su
 
 ```bash
 outline-cli documents create --title "Title" --text "Content" --collection-id "collection-id"
+outline-cli documents create --title "Title" --text-file "./doc.md" --collection-id "collection-id"
 outline-cli documents info --id "document-id"
 outline-cli documents list --collection-id "collection-id"
 outline-cli documents update --id "document-id" --title "New Title"
+outline-cli documents update --id "document-id" --text-file "./doc.md"
 outline-cli documents archive --id "document-id"
 outline-cli documents restore --id "document-id"
 outline-cli documents delete --id "document-id"
@@ -217,8 +227,10 @@ outline-cli groups memberships --id "group-id"
 ```bash
 outline-cli comments list --document-id "document-id"
 outline-cli comments create --document-id "document-id" --data "Comment text"
+outline-cli comments create --document-id "document-id" --data-file "./comment.md"
 outline-cli comments create --document-id "document-id" --data "Reply text" --parent-id "parent-comment-id"
 outline-cli comments update --id "comment-id" --data "Updated comment"
+outline-cli comments update --id "comment-id" --data-file "./comment.md"
 outline-cli comments delete --id "comment-id"
 outline-cli comments resolve --id "comment-id"
 outline-cli comments unresolve --id "comment-id"

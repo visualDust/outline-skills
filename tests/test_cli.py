@@ -1,7 +1,10 @@
 """CLI smoke tests."""
 
+import pytest
+
 import outline_cli.cli as cli
 from outline_cli import OutlineClient, OutlineValidationError
+from outline_cli.comment_utils import build_comment_data
 
 
 def test_main_passes_publish_flag(monkeypatch):
@@ -186,3 +189,163 @@ def test_documents_import_wraps_unsupported_attachment_import(tmp_path):
         assert "supported by the server" in str(exc)
     else:
         raise AssertionError("Expected OutlineValidationError")
+
+
+def test_main_reads_text_file_for_documents_create(tmp_path, monkeypatch, capsys):
+    """`documents create --text-file` should read local text before calling the client."""
+    source = tmp_path / "doc.md"
+    source.write_text("# Hello\n\nOutline\n", encoding="utf-8")
+    captured = {}
+
+    class DummyClient:
+        def documents_create(self, **kwargs):
+            captured.update(kwargs)
+            return {"ok": True}
+
+    monkeypatch.setattr(cli, "OutlineClient", lambda **kwargs: DummyClient())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "outline-cli",
+            "--api-key",
+            "ol_api_test",
+            "documents",
+            "create",
+            "--title",
+            "Doc",
+            "--collection-id",
+            "coll-1",
+            "--text-file",
+            str(source),
+        ],
+    )
+
+    assert cli.main() == 0
+    assert captured["text"] == "# Hello\n\nOutline\n"
+    capsys.readouterr()
+
+
+def test_main_rejects_text_and_text_file_together(tmp_path, monkeypatch):
+    """`documents create` should reject `--text` together with `--text-file`."""
+    source = tmp_path / "doc.md"
+    source.write_text("hello\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "outline-cli",
+            "--api-key",
+            "ol_api_test",
+            "documents",
+            "create",
+            "--title",
+            "Doc",
+            "--collection-id",
+            "coll-1",
+            "--text",
+            "inline",
+            "--text-file",
+            str(source),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 2
+
+
+def test_main_reads_text_file_for_documents_update(tmp_path, monkeypatch, capsys):
+    """`documents update --text-file` should read local text before calling the client."""
+    source = tmp_path / "doc.md"
+    source.write_text("# Updated\n\nOutline\n", encoding="utf-8")
+    captured = {}
+
+    class DummyClient:
+        def documents_update(self, **kwargs):
+            captured.update(kwargs)
+            return {"ok": True}
+
+    monkeypatch.setattr(cli, "OutlineClient", lambda **kwargs: DummyClient())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "outline-cli",
+            "--api-key",
+            "ol_api_test",
+            "documents",
+            "update",
+            "--id",
+            "doc-1",
+            "--text-file",
+            str(source),
+        ],
+    )
+
+    assert cli.main() == 0
+    assert captured["text"] == "# Updated\n\nOutline\n"
+    capsys.readouterr()
+
+
+def test_main_reads_data_file_for_comments_create(tmp_path, monkeypatch, capsys):
+    """`comments create --data-file` should read Markdown text from a local file."""
+    source = tmp_path / "comment.md"
+    source.write_text("Comment from file\n", encoding="utf-8")
+    captured = {}
+
+    class DummyClient:
+        def comments_create_markdown(self, **kwargs):
+            captured.update(kwargs)
+            return [{"ok": True}]
+
+    monkeypatch.setattr(cli, "OutlineClient", lambda **kwargs: DummyClient())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "outline-cli",
+            "--api-key",
+            "ol_api_test",
+            "comments",
+            "create",
+            "--document-id",
+            "doc-1",
+            "--data-file",
+            str(source),
+        ],
+    )
+
+    assert cli.main() == 0
+    assert captured["text"] == "Comment from file\n"
+    capsys.readouterr()
+
+
+def test_main_reads_data_file_for_comments_update(tmp_path, monkeypatch, capsys):
+    """`comments update --data-file` should read Markdown text from a local file."""
+    source = tmp_path / "comment.md"
+    source.write_text("Updated comment\n", encoding="utf-8")
+    captured = {}
+
+    class DummyClient:
+        def comments_update(self, **kwargs):
+            captured.update(kwargs)
+            return {"ok": True}
+
+    monkeypatch.setattr(cli, "OutlineClient", lambda **kwargs: DummyClient())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "outline-cli",
+            "--api-key",
+            "ol_api_test",
+            "comments",
+            "update",
+            "--id",
+            "comment-1",
+            "--data-file",
+            str(source),
+        ],
+    )
+
+    assert cli.main() == 0
+    assert captured["data"] == build_comment_data("Updated comment\n")
+    capsys.readouterr()

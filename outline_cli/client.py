@@ -6,6 +6,8 @@ This module provides a Python client for interacting with the Outline API.
 
 import json
 import mimetypes
+import socket
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -98,7 +100,7 @@ class OutlineClient:
 
         try:
             req = urllib.request.Request(url, data=request_data, headers=headers, method=method)
-            with urllib.request.urlopen(req, timeout=self.timeout) as response:
+            with self._urlopen_with_retries(req, endpoint=endpoint, url=url, request_data=request_data) as response:
                 response_data = json.loads(response.read().decode("utf-8"))
                 if not isinstance(response_data, dict):
                     raise OutlineAPIError("Unexpected response format: expected a JSON object")
@@ -113,12 +115,66 @@ class OutlineClient:
                 raise OutlineAPIError(error_message, status_code=e.code, response=error_data)
             except json.JSONDecodeError:
                 raise OutlineAPIError(error_message, status_code=e.code)
-        except urllib.error.URLError as e:
-            raise OutlineAPIError(f"Connection error: {e.reason}")
         except OutlineAPIError:
             raise
         except Exception as e:
             raise OutlineAPIError(f"Unexpected error: {e}")
+
+    def _should_retry_url_error(self, error: urllib.error.URLError) -> bool:
+        """Return whether a urllib connection error looks transient and worth retrying."""
+        reason = error.reason
+        if isinstance(reason, str):
+            return False
+        return isinstance(reason, (TimeoutError, ConnectionError, socket.timeout, OSError))
+
+    def _format_connection_error(
+        self,
+        *,
+        endpoint: str,
+        url: str,
+        request_data: bytes | None,
+        reason: Any,
+        attempts: int,
+    ) -> str:
+        """Build a detailed connection error message for transport-level failures."""
+        payload_bytes = len(request_data) if request_data is not None else 0
+        reason_text = str(reason)
+        reason_repr = repr(reason)
+        reason_type = type(reason).__name__
+        return (
+            f"Connection error on {endpoint} ({url}), payload_bytes={payload_bytes}, "
+            f"reason_type={reason_type}, reason={reason_text}, reason_repr={reason_repr}, attempts={attempts}"
+        )
+
+    def _urlopen_with_retries(
+        self,
+        request: urllib.request.Request,
+        *,
+        endpoint: str,
+        url: str,
+        request_data: bytes | None,
+    ) -> Any:
+        """Open a request with limited retries for transient transport errors."""
+        retry_delays = (0.2, 0.5)
+        attempts = len(retry_delays) + 1
+
+        for attempt in range(1, attempts + 1):
+            try:
+                return urllib.request.urlopen(request, timeout=self.timeout)
+            except urllib.error.HTTPError:
+                raise
+            except urllib.error.URLError as exc:
+                if attempt >= attempts or not self._should_retry_url_error(exc):
+                    raise OutlineAPIError(
+                        self._format_connection_error(
+                            endpoint=endpoint,
+                            url=url,
+                            request_data=request_data,
+                            reason=exc.reason,
+                            attempts=attempt,
+                        )
+                    ) from exc
+                time.sleep(retry_delays[attempt - 1])
 
     def _build_url(self, path_or_url: str) -> str:
         """Build an absolute URL from an API-relative path or absolute URL."""
@@ -185,9 +241,15 @@ class OutlineClient:
             },
             method="POST",
         )
+        upload_url_abs = self._build_url(upload_url)
 
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with self._urlopen_with_retries(
+                request,
+                endpoint="file upload",
+                url=upload_url_abs,
+                request_data=bytes(body),
+            ) as response:
                 response_data = json.loads(response.read().decode("utf-8"))
                 if not isinstance(response_data, dict):
                     raise OutlineAPIError("Unexpected upload response format: expected a JSON object")
@@ -202,8 +264,8 @@ class OutlineClient:
                 raise OutlineAPIError(error_message, status_code=e.code, response=error_data)
             except json.JSONDecodeError:
                 raise OutlineAPIError(error_message, status_code=e.code)
-        except urllib.error.URLError as e:
-            raise OutlineAPIError(f"Connection error: {e.reason}")
+        except OutlineAPIError:
+            raise
 
     # Document Operations
 
