@@ -52,7 +52,7 @@ export OUTLINE_API_KEY="ol_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 export OUTLINE_BASE_URL="https://app.getoutline.com/api"  # Must include /api suffix
 ```
 
-Or create `.outline-skills/config.json`:
+Or create `~/.outline-skills/config.json`:
 
 ```json
 {
