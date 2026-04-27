@@ -23,6 +23,7 @@ from .comment_utils import (
 )
 from .config import ConfigManager
 from .exceptions import OutlineAPIError, OutlineValidationError
+from .local_markdown import prepare_local_markdown_publish_plan, write_rewritten_markdown
 
 
 class OutlineClient:
@@ -180,6 +181,8 @@ class OutlineClient:
         """Build an absolute URL from an API-relative path or absolute URL."""
         if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
             return path_or_url
+        if path_or_url.startswith("/") and self.base_url.rstrip("/").endswith("/api"):
+            return f"{self.base_url.rstrip('/')[:-4]}{path_or_url}"
         return urljoin(f"{self.base_url}/", path_or_url.lstrip("/"))
 
     def _upload_file(
@@ -645,6 +648,294 @@ class OutlineClient:
                 self.documents_delete(placeholder_id)
             except OutlineAPIError:
                 pass
+
+    def _document_id_from_result(self, result: Dict[str, Any]) -> str:
+        """Extract a document id from common Outline document response shapes."""
+        data = result.get("data")
+        if isinstance(data, dict):
+            document_id = data.get("id")
+            if isinstance(document_id, str):
+                return document_id
+            document = data.get("document")
+            if isinstance(document, dict):
+                nested_document_id = document.get("id")
+                if isinstance(nested_document_id, str):
+                    return nested_document_id
+        raise OutlineAPIError("Unexpected documents.create response: missing document id")
+
+    def _attachment_from_create_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract attachment metadata from common attachments.create response shapes."""
+        data = result.get("data")
+        if isinstance(data, dict):
+            attachment = data.get("attachment")
+            if isinstance(attachment, dict):
+                return attachment
+            if isinstance(data.get("id"), str):
+                return data
+        raise OutlineAPIError("Unexpected attachments.create response: missing attachment metadata")
+
+    def _attachment_url_from_create_result(self, result: Dict[str, Any]) -> str:
+        """Return a stable absolute URL for a newly created attachment."""
+        attachment = self._attachment_from_create_result(result)
+        raw_url = attachment.get("url")
+        if isinstance(raw_url, str) and raw_url:
+            return self._build_url(raw_url)
+        attachment_id = attachment.get("id")
+        if isinstance(attachment_id, str) and attachment_id:
+            return self._build_url(f"/api/attachments.redirect?id={attachment_id}")
+        raise OutlineAPIError("Unexpected attachments.create response: missing attachment url/id")
+
+    def attachments_upload_file(
+        self,
+        document_id: str,
+        file_path: str | Path,
+        name: Optional[str] = None,
+        content_type: Optional[str] = None,
+        preset: str = "documentAttachment",
+    ) -> Dict[str, Any]:
+        """Create an Outline attachment and upload a local file to it.
+
+        This is the reusable high-level attachment operation that the local
+        Markdown publisher and future workflow commands should use.  If the
+        binary upload fails after ``attachments.create`` succeeds, the created
+        attachment is deleted best-effort before the original error is raised.
+        """
+        path = Path(file_path).expanduser()
+        if not path.is_file():
+            raise OutlineValidationError(f"Attachment upload expects a local file, but '{file_path}' was not found.")
+
+        upload_content_type = content_type or mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        try:
+            attachment_result = self.attachments_create(
+                name=name or path.name,
+                document_id=document_id,
+                content_type=upload_content_type,
+                size=path.stat().st_size,
+                preset=preset,
+            )
+        except OutlineAPIError as exc:
+            raise OutlineAPIError(
+                "Failed to create Outline attachment metadata before uploading local file.\n"
+                f"  document_id: {document_id}\n"
+                f"  local_file: {path}\n"
+                f"  content_type: {upload_content_type}\n"
+                f"  original_error: {exc}"
+            ) from exc
+        attachment = self._attachment_from_create_result(attachment_result)
+        attachment_id = attachment.get("id")
+        try:
+            data = attachment_result.get("data")
+            if not isinstance(data, dict):
+                raise OutlineAPIError("Unexpected attachments.create response: missing upload metadata")
+            upload_url = data.get("uploadUrl")
+            form_fields = data.get("form")
+            if not isinstance(upload_url, str) or not isinstance(form_fields, dict):
+                raise OutlineAPIError("Unexpected attachments.create response: missing upload URL or form fields")
+            upload_result = self._upload_file(
+                upload_url=upload_url,
+                form_fields=form_fields,
+                file_path=path,
+                content_type=upload_content_type,
+            )
+        except Exception as exc:
+            cleanup_message = "no attachment id was returned, so nothing could be deleted"
+            if isinstance(attachment_id, str):
+                try:
+                    self.attachments_delete(attachment_id)
+                    cleanup_message = f"deleted attachment {attachment_id}"
+                except OutlineAPIError:
+                    cleanup_message = f"failed to delete attachment {attachment_id} after upload failure"
+                    pass
+            raise OutlineAPIError(
+                "Failed to upload local file bytes to Outline attachment storage.\n"
+                f"  document_id: {document_id}\n"
+                f"  attachment_id: {attachment_id}\n"
+                f"  local_file: {path}\n"
+                f"  cleanup: {cleanup_message}\n"
+                f"  original_error: {exc}"
+            ) from exc
+
+        return {
+            "attachment": attachment,
+            "upload": upload_result,
+            "url": self._attachment_url_from_create_result(attachment_result),
+        }
+
+    def documents_create_from_file(
+        self,
+        file: str,
+        collection_id: str,
+        title: Optional[str] = None,
+        parent_document_id: Optional[str] = None,
+        publish: bool = True,
+        asset_root: Optional[str] = None,
+        allow_outside_assets: bool = False,
+        upload_local_links: bool = False,
+        dry_run: bool = False,
+        save_rewritten: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create an Outline document from local Markdown and upload local assets.
+
+        The method performs a full local preflight before it creates anything in
+        Outline.  All broken local asset references are reported together.  For
+        documents with local assets, it creates a temporary unpublished document,
+        uploads/deduplicates local files as attachments, rewrites the Markdown
+        to stable attachment URLs, and finally updates/publishes the document.
+        If a network/API failure happens mid-flight, uploaded attachments and
+        the temporary document are deleted best-effort.
+        """
+        plan = prepare_local_markdown_publish_plan(
+            file,
+            title=title,
+            asset_root=asset_root,
+            allow_outside_assets=allow_outside_assets,
+            upload_local_links=upload_local_links,
+        )
+
+        if dry_run:
+            return {
+                "ok": True,
+                "data": {
+                    "dryRun": True,
+                    "plan": plan.as_dict(),
+                },
+            }
+
+        if not plan.assets:
+            if save_rewritten:
+                write_rewritten_markdown(save_rewritten, plan.text)
+            try:
+                document_result = self.documents_create(
+                    title=plan.title,
+                    text=plan.text,
+                    collection_id=collection_id,
+                    parent_document_id=parent_document_id,
+                    publish=publish,
+                )
+            except OutlineAPIError as exc:
+                raise OutlineAPIError(
+                    "Failed to create Outline document from local Markdown file.\n"
+                    f"  source_file: {plan.source_file}\n"
+                    f"  collection_id: {collection_id}\n"
+                    f"  title: {plan.title}\n"
+                    f"  local_assets: 0\n"
+                    f"  original_error: {exc}"
+                ) from exc
+            return {
+                "ok": document_result.get("ok", True),
+                "data": {
+                    "document": document_result.get("data", document_result),
+                    "attachments": [],
+                    "sourceFile": str(plan.source_file),
+                    "rewrittenMarkdownFile": save_rewritten,
+                },
+            }
+
+        placeholder_id: Optional[str] = None
+        uploaded_attachment_ids: list[str] = []
+        uploaded_items: list[Dict[str, Any]] = []
+        uploaded_urls: dict[Path, str] = {}
+        try:
+            placeholder_result = self.documents_create(
+                title=plan.title,
+                text="Temporary unpublished document while outline-cli uploads local Markdown assets.",
+                collection_id=collection_id,
+                parent_document_id=parent_document_id,
+                publish=False,
+            )
+            placeholder_id = self._document_id_from_result(placeholder_result)
+        except Exception as exc:
+            raise OutlineAPIError(
+                "Failed to create the temporary unpublished Outline document required for local asset upload.\n"
+                "No attachments were uploaded.\n"
+                f"  source_file: {plan.source_file}\n"
+                f"  collection_id: {collection_id}\n"
+                f"  title: {plan.title}\n"
+                f"  local_assets_waiting_to_upload: {len(plan.assets)}\n"
+                f"  original_error: {exc}"
+            ) from exc
+
+        try:
+            for asset in plan.assets:
+                try:
+                    upload_result = self.attachments_upload_file(
+                        document_id=placeholder_id,
+                        file_path=asset.path,
+                        name=asset.path.name,
+                        content_type=asset.content_type,
+                    )
+                except Exception as exc:
+                    raise OutlineAPIError(
+                        "Failed while uploading a local asset referenced by the Markdown file.\n"
+                        f"  source_file: {plan.source_file}\n"
+                        f"  asset_path: {asset.path}\n"
+                        f"  references: {len(asset.references)}\n"
+                        f"  temporary_document_id: {placeholder_id}\n"
+                        f"  original_error: {exc}"
+                    ) from exc
+                attachment = upload_result["attachment"]
+                attachment_id = attachment.get("id")
+                if isinstance(attachment_id, str):
+                    uploaded_attachment_ids.append(attachment_id)
+                uploaded_urls[asset.path] = upload_result["url"]
+                uploaded_items.append(
+                    {
+                        "sourcePath": str(asset.path),
+                        "name": asset.path.name,
+                        "contentType": asset.content_type,
+                        "size": asset.size,
+                        "referenceCount": len(asset.references),
+                        "attachmentId": attachment_id,
+                        "url": upload_result["url"],
+                    }
+                )
+
+            rewritten_text = plan.rewrite(uploaded_urls)
+            if save_rewritten:
+                write_rewritten_markdown(save_rewritten, rewritten_text)
+
+            document_result = self.documents_update(
+                id=placeholder_id,
+                title=plan.title,
+                text=rewritten_text,
+                publish=publish,
+            )
+            return {
+                "ok": document_result.get("ok", True),
+                "data": {
+                    "document": document_result.get("data", document_result),
+                    "attachments": uploaded_items,
+                    "sourceFile": str(plan.source_file),
+                    "rewrittenMarkdownFile": save_rewritten,
+                },
+            }
+        except Exception as exc:
+            cleanup_messages: list[str] = []
+            for attachment_id in reversed(uploaded_attachment_ids):
+                try:
+                    self.attachments_delete(attachment_id)
+                    cleanup_messages.append(f"deleted attachment {attachment_id}")
+                except OutlineAPIError:
+                    cleanup_messages.append(f"failed to delete attachment {attachment_id}")
+                    pass
+            if placeholder_id:
+                try:
+                    self.documents_delete(placeholder_id)
+                    cleanup_messages.append(f"deleted temporary document {placeholder_id}")
+                except OutlineAPIError:
+                    cleanup_messages.append(f"failed to delete temporary document {placeholder_id}")
+                    pass
+            cleanup_summary = "; ".join(cleanup_messages) if cleanup_messages else "no temporary resources to clean up"
+            raise OutlineAPIError(
+                "Failed to create Outline document from local Markdown file after temporary resources were created.\n"
+                f"  source_file: {plan.source_file}\n"
+                f"  collection_id: {collection_id}\n"
+                f"  title: {plan.title}\n"
+                f"  local_assets: {len(plan.assets)}\n"
+                f"  uploaded_attachments_before_failure: {len(uploaded_attachment_ids)}\n"
+                f"  cleanup: {cleanup_summary}\n"
+                f"  original_error: {exc}"
+            ) from exc
 
     def documents_drafts(self, collection_id: Optional[str] = None, limit: int = 25, offset: int = 0) -> Dict:
         """

@@ -199,6 +199,28 @@ def import_document(client: OutlineClient, args):
         return 1
 
 
+def create_document_from_file(client: OutlineClient, args):
+    """Create a document from local Markdown and upload/rewrite local assets."""
+    try:
+        result = client.documents_create_from_file(
+            file=args.file,
+            collection_id=args.collection_id,
+            title=args.title,
+            parent_document_id=args.parent_id,
+            publish=not args.draft,
+            asset_root=args.asset_root,
+            allow_outside_assets=args.allow_outside_assets,
+            upload_local_links=args.upload_local_links,
+            dry_run=args.dry_run,
+            save_rewritten=args.save_rewritten,
+        )
+        print(json.dumps(result, indent=2))
+        return 0
+    except (OutlineAPIError, OutlineValidationError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def list_drafts(client: OutlineClient, args):
     """List draft documents."""
     try:
@@ -949,6 +971,23 @@ def create_attachment(client: OutlineClient, args):
         return 1
 
 
+def upload_attachment(client: OutlineClient, args):
+    """Create and upload an attachment from a local file."""
+    try:
+        result = client.attachments_upload_file(
+            document_id=args.document_id,
+            file_path=args.file,
+            name=args.name,
+            content_type=args.content_type,
+            preset=args.preset,
+        )
+        print(json.dumps(result, indent=2))
+        return 0
+    except (OutlineAPIError, OutlineValidationError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def delete_attachment(client: OutlineClient, args):
     """Delete an attachment."""
     try:
@@ -1233,6 +1272,40 @@ def main() -> int:
     docs_import.add_argument("--collection-id", required=True, help="Collection ID")
     docs_import.add_argument("--parent-id", help="Parent document ID")
     docs_import.add_argument("--draft", action="store_true", help="Create as draft")
+
+    # Documents: create-from-file
+    docs_create_from_file = docs_subparsers.add_parser(
+        "create-from-file",
+        help="Create a document from local Markdown and upload/rewrite local image assets",
+    )
+    docs_create_from_file.add_argument("--file", required=True, help="Path to a local Markdown file")
+    docs_create_from_file.add_argument("--collection-id", required=True, help="Collection ID")
+    docs_create_from_file.add_argument("--title", help="Document title (defaults to file name)")
+    docs_create_from_file.add_argument("--parent-id", help="Parent document ID")
+    docs_create_from_file.add_argument("--draft", action="store_true", help="Create as draft")
+    docs_create_from_file.add_argument(
+        "--asset-root",
+        help="Directory that local asset references must stay inside (defaults to the Markdown file directory)",
+    )
+    docs_create_from_file.add_argument(
+        "--allow-outside-assets",
+        action="store_true",
+        help="Allow local asset references outside --asset-root",
+    )
+    docs_create_from_file.add_argument(
+        "--upload-local-links",
+        action="store_true",
+        help="Also upload local non-image Markdown links such as PDFs (images are always uploaded)",
+    )
+    docs_create_from_file.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Only scan and validate the local file; do not create an Outline document or upload attachments",
+    )
+    docs_create_from_file.add_argument(
+        "--save-rewritten",
+        help="Save the Markdown with uploaded Outline attachment URLs to this local path",
+    )
 
     # Documents: drafts
     docs_drafts = docs_subparsers.add_parser("drafts", help="List draft documents")
@@ -1582,6 +1655,16 @@ def main() -> int:
     attachments_create.add_argument("--size", type=int, required=True, help="File size in bytes")
     attachments_create.add_argument("--preset", default="documentAttachment", help="Upload preset")
 
+    # Attachments: upload
+    attachments_upload = attachments_subparsers.add_parser(
+        "upload", help="Create an attachment and upload a local file"
+    )
+    attachments_upload.add_argument("--file", required=True, help="Path to a local file")
+    attachments_upload.add_argument("--document-id", required=True, help="Document ID")
+    attachments_upload.add_argument("--name", help="Attachment filename (defaults to local file name)")
+    attachments_upload.add_argument("--content-type", help="MIME type (guessed by default)")
+    attachments_upload.add_argument("--preset", default="documentAttachment", help="Upload preset")
+
     # Attachments: delete
     attachments_delete = attachments_subparsers.add_parser("delete", help="Delete an attachment")
     attachments_delete.add_argument("--id", required=True, help="Attachment ID")
@@ -1713,6 +1796,7 @@ def main() -> int:
             "templatize": templatize_document,
             "export": export_document,
             "import": import_document,
+            "create-from-file": create_document_from_file,
             "drafts": list_drafts,
             "archived": list_archived_documents,
             "deleted": list_deleted_documents,
@@ -1837,6 +1921,7 @@ def main() -> int:
 
         attachment_commands: dict[str, CommandHandler] = {
             "create": create_attachment,
+            "upload": upload_attachment,
             "delete": delete_attachment,
             "redirect": redirect_attachment,
         }

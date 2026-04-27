@@ -287,6 +287,101 @@ def test_main_reads_text_file_for_documents_update(tmp_path, monkeypatch, capsys
     capsys.readouterr()
 
 
+def test_main_dispatches_documents_create_from_file(monkeypatch, capsys):
+    """`documents create-from-file` should pass workflow options to the client."""
+    captured = {}
+
+    class DummyClient:
+        def documents_create_from_file(self, **kwargs):
+            captured.update(kwargs)
+            return {"ok": True, "data": {"dryRun": True}}
+
+    monkeypatch.setattr(cli, "OutlineClient", lambda **kwargs: DummyClient())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "outline-cli",
+            "--api-key",
+            "ol_api_test",
+            "documents",
+            "create-from-file",
+            "--file",
+            "report.md",
+            "--collection-id",
+            "coll-1",
+            "--title",
+            "Report",
+            "--parent-id",
+            "parent-1",
+            "--draft",
+            "--asset-root",
+            "assets",
+            "--allow-outside-assets",
+            "--upload-local-links",
+            "--dry-run",
+            "--save-rewritten",
+            "rewritten.md",
+        ],
+    )
+
+    assert cli.main() == 0
+    assert captured == {
+        "file": "report.md",
+        "collection_id": "coll-1",
+        "title": "Report",
+        "parent_document_id": "parent-1",
+        "publish": False,
+        "asset_root": "assets",
+        "allow_outside_assets": True,
+        "upload_local_links": True,
+        "dry_run": True,
+        "save_rewritten": "rewritten.md",
+    }
+    capsys.readouterr()
+
+
+def test_main_dispatches_attachments_upload(monkeypatch, capsys):
+    """`attachments upload` should create/upload a local file through the high-level helper."""
+    captured = {}
+
+    class DummyClient:
+        def attachments_upload_file(self, **kwargs):
+            captured.update(kwargs)
+            return {"ok": True, "data": {"url": "https://outline.test/file.png"}}
+
+    monkeypatch.setattr(cli, "OutlineClient", lambda **kwargs: DummyClient())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "outline-cli",
+            "--api-key",
+            "ol_api_test",
+            "attachments",
+            "upload",
+            "--file",
+            "figure.png",
+            "--document-id",
+            "doc-1",
+            "--name",
+            "Figure.png",
+            "--content-type",
+            "image/png",
+            "--preset",
+            "documentAttachment",
+        ],
+    )
+
+    assert cli.main() == 0
+    assert captured == {
+        "document_id": "doc-1",
+        "file_path": "figure.png",
+        "name": "Figure.png",
+        "content_type": "image/png",
+        "preset": "documentAttachment",
+    }
+    capsys.readouterr()
+
+
 def test_main_reads_data_file_for_comments_create(tmp_path, monkeypatch, capsys):
     """`comments create --data-file` should read Markdown text from a local file."""
     source = tmp_path / "comment.md"

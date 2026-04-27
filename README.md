@@ -6,6 +6,7 @@ AI agent skill for interacting with [Outline](https://www.getoutline.com/) knowl
 
 - Full Outline API coverage: documents, collections, search, users, groups, comments, attachments, shares, stars, revisions, events, views, and file operations
 - Membership and permission workflows for documents, collections, and groups
+- High-level local Markdown publishing that uploads local image assets, rewrites links, and rolls back temporary Outline resources on failure
 - Markdown comment creation with rich-text rendering and automatic long-reply splitting for Outline comments
 - Works with Claude Code, Codex, Cursor, Windsurf, and other AI agents
 - Cross-platform: Windows, Linux, and macOS
@@ -92,6 +93,34 @@ outline-cli comments create --document-id "doc-id" --data-file ./comment.md
 outline-cli comments update --id "comment-id" --data-file ./comment.md
 ```
 
+### Publishing local Markdown with images
+
+Use `documents create-from-file` when a local Markdown file contains relative image links such as `![chart](figures/chart.png)`.
+The workflow preflights all local assets before creating anything in Outline, creates a temporary unpublished document for attachment upload, uploads each unique asset once, rewrites the Markdown to Outline attachment URLs, and then publishes/updates the final document. If an API/upload step fails mid-flight, the CLI attempts to delete uploaded attachments and the temporary document, and the error message includes the cleanup outcome.
+
+```bash
+# First validate what would be uploaded without touching Outline.
+outline-cli documents create-from-file \
+  --file ./report.md \
+  --collection-id "collection-id" \
+  --dry-run
+
+# Publish the document and rewrite local image URLs to Outline attachment URLs.
+outline-cli documents create-from-file \
+  --file ./report.md \
+  --collection-id "collection-id" \
+  --title "Experiment Report" \
+  --save-rewritten ./report.outline.md
+```
+
+Supported local references include inline Markdown images, reference-style Markdown images, and HTML `<img src="...">` tags outside fenced/indented code blocks. Remote URLs, `data:` URLs, and anchors are left unchanged. By default, local assets must stay under the Markdown file's directory; use `--asset-root` to narrow that boundary, or `--allow-outside-assets` only when you intentionally want to upload files outside it. Add `--upload-local-links` to upload local non-image links such as PDFs.
+
+For a single existing Outline document attachment, use:
+
+```bash
+outline-cli attachments upload --document-id "document-id" --file ./figure.png
+```
+
 ## Development
 
 ### Project Structure
@@ -101,6 +130,7 @@ outline-skills/
 ├── outline_cli/             # Python CLI package
 │   ├── cli.py               # CLI implementation
 │   ├── client.py            # Outline API client
+│   ├── local_markdown.py    # Local Markdown asset preflight/rewrite workflow
 │   └── config.py            # Configuration loading
 ├── skills/outline-skills/   # Agent skill documentation
 ├── .claude-plugin/          # Plugin manifest
@@ -113,9 +143,9 @@ outline-skills/
 ### Testing
 
 ```bash
-python -m ruff check .
-python -m mypy outline_cli
-python -m pytest
+uv run --extra dev python -m ruff check outline_cli tests
+uv run --extra dev python -m mypy outline_cli
+uv run --extra dev python -m pytest -q
 ```
 
 ## Security Note

@@ -87,6 +87,16 @@ outline-cli comments create --document-id "document-id" --data-file ./comment.md
 outline-cli comments update --id "comment-id" --data-file ./comment.md
 ```
 
+**Local Markdown with images/assets**: Use the higher-level `documents create-from-file` workflow instead of plain `documents create --text-file` when the Markdown contains local image references. It preflights assets, uploads each unique local file as an Outline attachment, rewrites Markdown links, and rolls back temporary resources on upload/update failures.
+
+Recommended safe sequence:
+```bash
+outline-cli documents create-from-file --file ./report.md --collection-id "collection-id" --dry-run
+outline-cli documents create-from-file --file ./report.md --collection-id "collection-id" --title "Report" --save-rewritten ./report.outline.md
+```
+
+If the user asks for real testing, create/use an empty test collection first so existing Outline content is not polluted.
+
 ### Environment Variables
 
 ```bash
@@ -123,6 +133,9 @@ outline-cli documents duplicate --id "document-id"
 outline-cli documents templatize --id "document-id"
 outline-cli documents export --id "document-id"
 outline-cli documents import --file "./doc.md"   # local file; Markdown/text is imported directly, other files use Outline import flow (supported formats depend on server)
+outline-cli documents create-from-file --file "./report.md" --collection-id "collection-id"  # local Markdown with local images/assets
+outline-cli documents create-from-file --file "./report.md" --collection-id "collection-id" --dry-run
+outline-cli documents create-from-file --file "./report.md" --collection-id "collection-id" --upload-local-links --save-rewritten "./report.outline.md"
 outline-cli documents drafts --collection-id "collection-id"
 outline-cli documents archived --limit 25 --offset 0
 outline-cli documents deleted --limit 25 --offset 0
@@ -259,9 +272,18 @@ outline-cli comments remove-reaction --id "comment-id" --emoji "👍"
 **Attachment Operations:**
 ```bash
 outline-cli attachments create --name "file.pdf" --document-id "document-id" --content-type "application/pdf" --size 1024
+outline-cli attachments upload --file "./figure.png" --document-id "document-id"
 outline-cli attachments redirect --id "attachment-id"
 outline-cli attachments delete --id "attachment-id"
 ```
+
+**Local Markdown publishing details:**
+- `documents create-from-file` supports inline Markdown images (`![alt](path.png)`), reference-style images, and HTML `<img src="path.png">` outside fenced/indented code blocks.
+- Remote URLs, anchors, and `data:` URLs are left unchanged.
+- By default, local asset paths must stay under the Markdown file directory. Use `--asset-root` to restrict the allowed tree, or `--allow-outside-assets` only when intentionally uploading files outside it.
+- Use `--upload-local-links` to upload local non-image links such as PDFs.
+- Broken local asset references are reported before any Outline API write happens, including line/column, resolved path, and reason.
+- If an upload/update fails after temporary resources were created, the error includes best-effort cleanup results for uploaded attachments and the temporary document.
 
 ### Shares / Stars / Revisions / Events
 
