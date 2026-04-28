@@ -84,6 +84,22 @@ The agent will automatically use the configured credentials to perform these ope
 
 While this repo is designed for AI agent integration, the underlying `outline-kb-cli` package can also be used as a standalone CLI tool. See [skills/outline-skills/SKILL.md](skills/outline-skills/SKILL.md) for detailed command reference.
 
+By default, commands print compact, agent-friendly JSON summaries instead of the full Outline API response. These summaries keep the most useful IDs, names, URLs, counts, pagination, and bounded text previews while omitting noisy policy/token/nested fields. Use `--raw` when you need the complete API JSON, and `--max-text-chars` to tune preview length in summary mode:
+
+```bash
+# Compact summary output, suitable for agents and shell inspection.
+outline-cli auth info
+outline-cli search "deployment guide" --limit 5
+
+# Complete Outline API response for debugging or custom scripts.
+outline-cli auth info --raw
+
+# Keep document metadata but suppress text bodies in the summary.
+outline-cli documents info --id "doc-id" --max-text-chars 0
+```
+
+API failures are written to stderr with contextual fields such as HTTP status, endpoint, URL, message, and an actionable hint for common cases (`401`, `403`, `404`, `429`, and server errors). Invalid config-file warnings are also written to stderr so JSON stdout remains machine-readable.
+
 For longer document/comment bodies, prefer file-backed inputs instead of large shell arguments:
 
 ```bash

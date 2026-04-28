@@ -7,6 +7,7 @@ for the Outline API client.
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -110,10 +111,10 @@ class ConfigManager:
                 loaded = json.load(f)
                 if isinstance(loaded, dict):
                     return loaded
-                print(f"Warning: Ignoring config from {path}: expected a JSON object")
+                print(f"Warning: Ignoring config from {path}: expected a JSON object", file=sys.stderr)
                 return None
         except (json.JSONDecodeError, IOError) as e:
-            print(f"Warning: Failed to load config from {path}: {e}")
+            print(f"Warning: Failed to load config from {path}: {e}", file=sys.stderr)
             return None
 
     @classmethod

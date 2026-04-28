@@ -19,6 +19,9 @@ class OutlineAPIError(OutlineError):
         message: str,
         status_code: int | None = None,
         response: dict[str, Any] | None = None,
+        endpoint: str | None = None,
+        url: str | None = None,
+        hint: str | None = None,
     ) -> None:
         """
         Initialize OutlineAPIError.
@@ -31,6 +34,9 @@ class OutlineAPIError(OutlineError):
         self.message = message
         self.status_code = status_code
         self.response = response
+        self.endpoint = endpoint
+        self.url = url
+        self.hint = hint
         super().__init__(self.message)
 
     def __str__(self) -> str:

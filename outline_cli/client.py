@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, NoReturn, Optional
 from urllib.parse import urljoin
 
 from .comment_utils import (
@@ -94,7 +94,7 @@ class OutlineClient:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "outline-cli/0.1.0 (Python)",
+            "User-Agent": "outline-cli/0.1.5 (Python)",
         }
 
         request_data = json.dumps(data).encode("utf-8") if data else None
@@ -107,19 +107,64 @@ class OutlineClient:
                     raise OutlineAPIError("Unexpected response format: expected a JSON object")
                 return response_data
         except urllib.error.HTTPError as e:
-            error_message = f"HTTP {e.code}: {e.reason}"
-            try:
-                error_data = json.loads(e.read().decode("utf-8"))
-                if not isinstance(error_data, dict):
-                    raise OutlineAPIError(error_message, status_code=e.code)
-                error_message = error_data.get("message", error_message)
-                raise OutlineAPIError(error_message, status_code=e.code, response=error_data)
-            except json.JSONDecodeError:
-                raise OutlineAPIError(error_message, status_code=e.code)
+            self._raise_http_error(e, endpoint=endpoint, url=url)
         except OutlineAPIError:
             raise
         except Exception as e:
             raise OutlineAPIError(f"Unexpected error: {e}")
+
+    def _hint_for_http_error(self, status_code: int, *, endpoint: str, url: str) -> str | None:
+        """Return an actionable troubleshooting hint for common HTTP failures."""
+        base_url = self.base_url.rstrip("/")
+        if status_code == 401:
+            return (
+                "Check that the Outline API key is present, starts with ol_api_, and has not expired or been revoked."
+            )
+        if status_code == 403:
+            return (
+                "The API key is valid but lacks access to this resource. Check collection/document sharing and "
+                "permissions."
+            )
+        if status_code == 404:
+            if not base_url.endswith("/api"):
+                return (
+                    "The configured base URL does not end with /api. Outline CLI base URLs usually look like "
+                    "https://your-outline-host/api, not https://your-outline-host."
+                )
+            return (
+                "Check the resource id/slug and confirm it has not been archived, deleted, or hidden from this API key."
+            )
+        if status_code == 429:
+            return "Outline rate-limited the request. Wait and retry with a smaller --limit or fewer rapid commands."
+        if status_code >= 500:
+            return (
+                "Outline returned a server error. Retry once; if it persists, reduce payload size or inspect the "
+                "Outline server logs/API response with --raw where applicable."
+            )
+        return None
+
+    def _raise_http_error(self, error: urllib.error.HTTPError, *, endpoint: str, url: str) -> NoReturn:
+        """Raise OutlineAPIError with parsed response details and an actionable hint."""
+        error_message = f"HTTP {error.code}: {error.reason}"
+        error_data: dict[str, Any] | None = None
+        try:
+            parsed_error = json.loads(error.read().decode("utf-8"))
+            if isinstance(parsed_error, dict):
+                error_data = parsed_error
+                parsed_message = parsed_error.get("message")
+                if isinstance(parsed_message, str) and parsed_message:
+                    error_message = parsed_message
+        except json.JSONDecodeError:
+            pass
+
+        raise OutlineAPIError(
+            error_message,
+            status_code=error.code,
+            response=error_data,
+            endpoint=endpoint,
+            url=url,
+            hint=self._hint_for_http_error(error.code, endpoint=endpoint, url=url),
+        )
 
     def _should_retry_url_error(self, error: urllib.error.URLError) -> bool:
         """Return whether a urllib connection error looks transient and worth retrying."""
@@ -173,9 +218,20 @@ class OutlineClient:
                             request_data=request_data,
                             reason=exc.reason,
                             attempts=attempt,
-                        )
+                        ),
+                        endpoint=endpoint,
+                        url=url,
+                        hint=(
+                            "Check network connectivity and verify OUTLINE_BASE_URL points to a reachable "
+                            "Outline API URL."
+                        ),
                     ) from exc
                 time.sleep(retry_delays[attempt - 1])
+        raise OutlineAPIError(
+            f"Connection error on {endpoint} ({url}): retry loop exhausted unexpectedly",
+            endpoint=endpoint,
+            url=url,
+        )
 
     def _build_url(self, path_or_url: str) -> str:
         """Build an absolute URL from an API-relative path or absolute URL."""
@@ -240,7 +296,7 @@ class OutlineClient:
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": f"multipart/form-data; boundary={boundary}",
-                "User-Agent": "outline-cli/0.1.0 (Python)",
+                "User-Agent": "outline-cli/0.1.5 (Python)",
             },
             method="POST",
         )
@@ -258,15 +314,7 @@ class OutlineClient:
                     raise OutlineAPIError("Unexpected upload response format: expected a JSON object")
                 return response_data
         except urllib.error.HTTPError as e:
-            error_message = f"HTTP {e.code}: {e.reason}"
-            try:
-                error_data = json.loads(e.read().decode("utf-8"))
-                if not isinstance(error_data, dict):
-                    raise OutlineAPIError(error_message, status_code=e.code)
-                error_message = error_data.get("message", error_message)
-                raise OutlineAPIError(error_message, status_code=e.code, response=error_data)
-            except json.JSONDecodeError:
-                raise OutlineAPIError(error_message, status_code=e.code)
+            self._raise_http_error(e, endpoint="file upload", url=upload_url_abs)
         except OutlineAPIError:
             raise
 
@@ -1886,7 +1934,7 @@ class OutlineClient:
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "outline-cli/0.1.0",
+                "User-Agent": "outline-cli/0.1.5",
             },
             method="POST",
         )
@@ -2251,7 +2299,7 @@ class OutlineClient:
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "outline-cli/0.1.0",
+                "User-Agent": "outline-cli/0.1.5",
             },
             method="POST",
         )

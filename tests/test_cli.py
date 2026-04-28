@@ -1,10 +1,13 @@
 """CLI smoke tests."""
 
+import json
+
 import pytest
 
 import outline_cli.cli as cli
 from outline_cli import OutlineClient, OutlineValidationError
 from outline_cli.comment_utils import build_comment_data
+from outline_cli.config import ConfigManager
 
 
 def test_main_passes_publish_flag(monkeypatch):
@@ -444,3 +447,137 @@ def test_main_reads_data_file_for_comments_update(tmp_path, monkeypatch, capsys)
     assert cli.main() == 0
     assert captured["data"] == build_comment_data("Updated comment\n")
     capsys.readouterr()
+
+
+def test_default_output_summarizes_noisy_auth_info(monkeypatch, capsys):
+    """Default CLI output should be compact, structured JSON with raw-output guidance."""
+
+    class DummyClient:
+        def auth_info(self):
+            return {
+                "ok": True,
+                "data": {
+                    "user": {
+                        "id": "user-1",
+                        "name": "Agent",
+                        "email": "agent@example.com",
+                        "role": "member",
+                        "preferences": {"very": "large"},
+                    },
+                    "team": {"id": "team-1", "name": "Team", "url": "https://outline.test"},
+                    "collaborationToken": "secret-token",
+                    "groups": [{"id": "group-1", "name": "Engineering", "memberships": ["large"]}],
+                },
+                "policies": [{"id": "policy-1"}],
+            }
+
+    monkeypatch.setattr(cli, "OutlineClient", lambda **kwargs: DummyClient())
+    monkeypatch.setattr("sys.argv", ["outline-cli", "--api-key", "ol_api_test", "auth", "info"])
+
+    assert cli.main() == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["ok"] is True
+    assert output["_meta"]["output"] == "summary"
+    assert "--raw" in output["_meta"]["rawHint"]
+    assert output["user"] == {
+        "id": "user-1",
+        "name": "Agent",
+        "email": "agent@example.com",
+        "role": "member",
+    }
+    assert output["team"]["name"] == "Team"
+    assert "collaborationToken" not in output
+    assert "policies" not in output
+
+
+def test_raw_output_passthrough_after_subcommand(monkeypatch, capsys):
+    """`--raw` should work after nested subcommands and preserve the API response."""
+    raw_result = {"ok": True, "data": {"collaborationToken": "secret-token"}, "policies": [{"id": "p1"}]}
+
+    class DummyClient:
+        def auth_info(self):
+            return raw_result
+
+    monkeypatch.setattr(cli, "OutlineClient", lambda **kwargs: DummyClient())
+    monkeypatch.setattr("sys.argv", ["outline-cli", "--api-key", "ol_api_test", "auth", "info", "--raw"])
+
+    assert cli.main() == 0
+    assert json.loads(capsys.readouterr().out) == raw_result
+
+
+def test_document_info_summary_truncates_text_with_limit(monkeypatch, capsys):
+    """Document summaries should include bounded text previews by default."""
+
+    class DummyClient:
+        def documents_info(self, id):
+            return {
+                "ok": True,
+                "data": {
+                    "id": id,
+                    "title": "Long Doc",
+                    "url": "/doc/long",
+                    "collectionId": "coll-1",
+                    "text": "abcdefghijklmnopqrstuvwxyz",
+                },
+            }
+
+    monkeypatch.setattr(cli, "OutlineClient", lambda **kwargs: DummyClient())
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "outline-cli",
+            "--api-key",
+            "ol_api_test",
+            "documents",
+            "info",
+            "--id",
+            "doc-1",
+            "--max-text-chars",
+            "5",
+        ],
+    )
+
+    assert cli.main() == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["document"]["textPreview"] == "abcde"
+    assert output["document"]["textLength"] == 26
+    assert output["document"]["textTruncated"] is True
+
+
+def test_api_error_output_includes_hint_and_context(monkeypatch, capsys):
+    """API failures should print actionable diagnostics to stderr."""
+
+    class DummyClient:
+        def documents_info(self, id):
+            raise cli.OutlineAPIError(
+                "HTTP 404: Not Found",
+                status_code=404,
+                endpoint="documents.info",
+                url="https://outline.test/documents.info",
+                hint="The configured base URL does not end with /api.",
+            )
+
+    monkeypatch.setattr(cli, "OutlineClient", lambda **kwargs: DummyClient())
+    monkeypatch.setattr(
+        "sys.argv",
+        ["outline-cli", "--api-key", "ol_api_test", "documents", "info", "--id", "doc-1"],
+    )
+
+    assert cli.main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Outline API request failed" in captured.err
+    assert "HTTP: 404" in captured.err
+    assert "Endpoint: documents.info" in captured.err
+    assert "Hint: The configured base URL" in captured.err
+
+
+def test_invalid_config_warning_goes_to_stderr(tmp_path, capsys):
+    """Malformed config warnings must not corrupt JSON stdout."""
+    path = tmp_path / "config.json"
+    path.write_text("not json", encoding="utf-8")
+
+    assert ConfigManager._load_from_file(path) is None
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Warning: Failed to load config" in captured.err

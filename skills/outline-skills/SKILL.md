@@ -14,11 +14,14 @@ Use this skill when the user asks to operate an Outline knowledge base via API/C
 
 Outline documents support rich, structured content — not just plain paragraphs. When creating or updating documents, actively choose formatting that fits the task: headings, bullet/numbered lists, task lists, tables, quotes, code fences, callouts, links, attachments, and Mermaid diagrams when helpful.
 
+For math, use dollar-sign delimiters so Outline renders it correctly: `$x^2 + y^2$` for inline math and `$$\int_0^1 x^2\,dx$$` for display math. Avoid LaTeX-style `\(...\)` and `\[...\]` delimiters because they may remain plain text in Outline.
+
 Prefer readable structure over large walls of text. For example:
 - use headings for sections
 - use lists for steps, options, and summaries
 - use tables for comparisons
 - use code fences for commands/snippets
+- use `$...$` or `$$...$$` for math expressions
 - use Mermaid for flows, architecture, or state diagrams
 
 ## When to Trigger
@@ -67,6 +70,17 @@ outline-cli --api-key "..." --base-url "..." collections list
 # ✗ Wrong
 outline-cli collections list --api-key "..." --base-url "..."
 ```
+
+**Output mode**: By default, `outline-cli` prints compact, agent-friendly JSON summaries rather than the complete raw Outline API response. The summary preserves practical fields like IDs, names, URLs, counts, pagination, and bounded text previews while omitting noisy nested fields such as policies and collaboration tokens. Use `--raw` when you need exact API JSON, and use `--max-text-chars` to control summary previews:
+```bash
+outline-cli auth info                         # compact identity/team summary
+outline-cli search "deployment guide" --limit 5
+outline-cli documents info --id "document-id" --max-text-chars 1000
+outline-cli documents info --id "document-id" --max-text-chars 0  # metadata only
+outline-cli auth info --raw                   # complete API response
+```
+
+`--raw` and `--max-text-chars` may be placed after the nested command, as shown above. API errors and config warnings are written to stderr, so stdout stays valid JSON on successful commands.
 
 **Base URL Format**: The base URL usually include the `/api` suffix:
 ```bash
@@ -351,10 +365,26 @@ outline-cli views list --document-id "document-id" --limit 25
   - Example: `https://outline.example.com/api` (not `https://outline.example.com`)
   - Verify the Outline instance URL is correct
 
+The CLI prints a `Hint:` line for common API errors. Follow it first — for example, a 404 hint that mentions `/api` usually means `OUTLINE_BASE_URL` is missing the `/api` suffix, while a resource-specific 404 usually means the ID is wrong or inaccessible to the API-key user.
+
+**429 Rate Limited:**
+- Wait briefly and retry.
+- Reduce `--limit` for list/search commands.
+- Avoid rapid loops that issue many Outline API calls.
+
+**5xx Server Error:**
+- Retry once in case the server/transient upload path recovered.
+- If it persists, reduce payload size or split very large writes.
+- For self-hosted Outline, check server logs around the printed endpoint/URL.
+
 **Connection errors:**
 - Verify `OUTLINE_BASE_URL` is set correctly
 - Verify instance is reachable (not behind firewall/VPN)
 - Check for typos in the URL
+
+**Config warnings:**
+- Invalid `.outline-skills/config.json` or `~/.outline-skills/config.json` files produce `Warning:` messages on stderr and are ignored.
+- Fix malformed JSON or remove stale config files if the CLI appears to be using unexpected credentials/base URL.
 
 ### Comment-Specific Issues
 
@@ -363,9 +393,10 @@ outline-cli views list --document-id "document-id" --limit 25
 - **Solution**: Split long content into multiple comments
 - Consider using document content for longer text instead of comments
 
-**Comment not rendering Markdown:**
-- Comments only support plain text, not Markdown
-- Use document content for formatted text
+**Comment not rendering Markdown as expected:**
+- `comments create` sends Markdown through Outline's `text` field and supports common formatting, but comments use a smaller rich-text schema than documents.
+- Complex document-only blocks may not render inside comments; use document content for large or complex formatted output.
+- If a long comment renders strangely, prefer `--data-file` and let the CLI's Markdown-aware splitter preserve block boundaries.
 
 ### Created content is not visible to the user
 
